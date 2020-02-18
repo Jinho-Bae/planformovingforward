@@ -1,8 +1,8 @@
 [ToC]
 
-전통적인 SQL과 JDBC API의 조합만으로는 enterprise application에서는 한계가 있다. Spring은 주요 Java data access 기술을 모두 지원. 2장에서는 Spring의 data access 기술에 관한 개념으 정리하고, 기술의 사용 방법을 알아본다.
+전통적인 SQL과 JDBC API의 조합만으로는 enterprise application에서는 한계가 있다. Spring은 주요 Java data access 기술을 모두 지원. 2장에서는 Spring의 data access 기술에 관한 개념을 정리하고, 기술의 사용 방법을 알아본다.
 
-# 개념
+# data access 기술 개념
 
 ## DAO pattern
 DAO pattern은 DTO 또는 domain object만을 사용하는 interface를 통해 data access 기술을 외부에 노출하지 않도록 만드는 것.
@@ -19,7 +19,7 @@ DAO pattern은 DTO 또는 domain object만을 사용하는 interface를 통해 d
 * data access 중 발생하는 exception는 대부분 복구할 수 없음. 따라서 DAO 밖으로 던져질 때는 runtime exception이어야 함. DAO method 선언부에 throws SQLException과 같은 내부 기술을 드러내서는 안됨. throws Exception과 같은 무책임한 선언도 마찬가지.
 > service 계층 코드는 DAO가 던지는 대부분의 exception은 직접 다뤄야 할 이유가 없음 > runtime exception
 
-* 때로는 DAO 던지는 exception을 잡아서 business logic(service)에 적용하는 경우가 있다. 중복키 exception이나 optimistic locking 등이 대표적인 예. 그런데 이런 exception에 일관성이 없기 때문에 service 계층에서 기술에 따른 exception을 알고 있어야만 하는 문제가 생김. 이 때문에 Spring은 기술이나 DB의 종류에 상관없이 일관된 의미를 갖는 data exception abstraction을 제공하고, 각 기술과 DB에서 발생하는 exception을 Spring data exception으로 변환해주는 servcie를 제공.
+* 때로는 DAO가 던지는 exception을 잡아서 business logic(service)에 적용하는 경우가 있다. 중복키 exception이나 optimistic locking 등이 대표적인 예. 그런데 이런 exception에 일관성이 없기 때문에 service 계층에서 기술에 따른 exception을 알고 있어야만 하는 문제가 생김. 이 때문에 Spring은 기술이나 DB의 종류에 상관없이 일관된 의미를 갖는 data exception abstraction을 제공하고, 각 기술과 DB에서 발생하는 exception을 Spring data exception으로 변환해주는 servcie를 제공.
 
 ## template & API
 data access 기술을 사용하는 코드는 대부분 try/catch/finally와 판에 박힌 반복되는 코드로 작성되기 쉽다. data access 기술은 다양한 exception상황이 발생할 수 있다. 이런 상황에서 server의 제한된 resource에 누수가 발생하지 않도록 exception상황에서도 사용한 resource를 적절히 반환해주는 코드가 반드시 필요함.  
@@ -28,8 +28,7 @@ template은 template/callback pattern을 이용해 이런 판에 박힌 코드�
 > exception translation이란?  
 > 예외를 던질 때, 높은 수준의 abstraction layer의 exception으로 바꿔서 전달.
 > (catch 조건문은 낮은 exception. throw는 높은 exception)  
-> 이렇게 함으로써 
-* 단점
+* 단점  
 data access 기술의 API를 template이 제공해주는 걸 써야한다는 점이다.
 
 ## DataSource
@@ -56,3 +55,87 @@ Spring이 제공하는 가장 단순한 구현 class. getConnection()호출할 �
 
 
 # JDBC
+JDBC는 low level API이다. JDBC는 표준 interface를 제공하고 각 DB vendor와 개발팀에서 이 interface를 구현한 driver를 제공하는 방식으로 사용된다. 그 덕분에 SQL의 호환성만 유지한다면 JDBC로 개발한 코드는 DB가 변경돼도 그대로 재사용할 수 있는 장점이 있다.  
+* entity class와 annotation을 이용하는 최신 ORM도 내부적으로는 DB와의 연동을 위해 JDBC를 이용한다.
+* JDBC API를 이용한 개발 방식의 문제점과 한계. 번잡한 코드, DB에 따라 던져지는 체크 예외, SQL은 코드 내에서 직접 문자로, connection과 같은 공유 resource를 release 필요.
+* Spring JDBC는 장점을 그대로 유지하면서도 단점을 template/callback pattern을 이용해 극복하게 함.
+* 간결한 API, JDBC API에서는 지원되지 않는 편리한 기능
+
+## JDBC 기술과 동작원리
+### JDBC 접근 방법
+* **SimpleJdbcTemplate**  
+JDBC의 모든 기능을 최대한 활용할 수 있는 유연성
+* **SimpleJdbcInsert & SimpleJdbcCall**
+DB가 제공해주는 메타정보를 활용해서 최소한의 코드만으로 단순한 JDBC 코드를 작성하게 해준다.
+
+
+### JDBC가 해주는 작업
+* Connection 열고 닫기  
+Connection과 관련된 모든 작업은 필요한 시점에 알아서 진행해준다. 예외가 발생하면 문제없이 열린 모든 Connection object를 닫아준다. 열고 닫는 시점은 transaction 기능과 맞물려서 결정된다.
+* Statement 준비와 닫기
+* Statement 실행
+* ResultSet loop
+* Exception handling and translation
+체크 예외인 SQLException을 runtime exception인 DataAccessException 으로 변환해준다.
+* transaction handling
+Spring JDBC가 이런 대부분의 작업을 해주기 때문에 개발자는 data access logic마다 달라지는 부분만 정의해주면 된다. 개발자가 해야 할 또 한 가지는 connection을 가져올 DataSource를 정의해주는 것이다.
+
+상세한 JDBC object 설명은 생략.
+
+## JDBC DAO
+DAO에서 DataSource를 DI받은 뒤 template object(SimpleJdbcTemplate & SimpleJdbcInsert)를 코드로 생성해 인스턴스 변수에 두고 쓴다.
+
+# iBatis SqlMaps
+* iBatis는 Java object와 SQL 문 사이의 자동 mapping 기능을 지원하는 ORM framework다. Java obejct만을 이용해 data logic을 작성할 수 있게 해주고, SQL을 별도의 파일로 분리해서 관리하게 해주며, object-SQL 사이의 parameter mapping 작업을 자동으로 해준다.
+* 본격적인 ORM인 JPA나 hibernate처럼 새로운 DP programming을 익혀야 하는 부담이 없다. 익숙한 SQL 그대로 이용하면서도 JDBC 코드 작성 불편함을 제거해주고, domain object나 DTO 중심으로 개발이 가능하다는 장점이 있다.
+* 가장 큰 특징은 SQL을 Java 코드에서 분리해 별도의 XML 파일 안에 작성하고 관리할 수 있다는 점이다.
+* iBatis는 단순한 SQL 분리와 자동 mapping 이상의 많은 기능을 제공해주는 고급 framework다.
+
+## SqlMapClient 생성
+iBatis의 핵심 API는 SqlMapClient interface에 담겨 있다. SqlMapClient를 bean으로 등록해두어야 한다. DAO에서 DI 받아 사용해야 하기 때문에 SqlMapClientFactoryBean이 필요하다.
+### iBatis 설정파일과 mapping 파일
+공통 설정을 담은 XML 파일과 mapping정보를 담은 XML mapping파일 두 가지가 필요하다.  
+* **설정파일**  
+DataSource, Transaction manager, mapping resource 파일 목록, property, typeAlias, handler, object factory, 설정 property 값  
+이 중 DataSource, Tx manager는 bean으로 등록된 것을 사용하는 게 좋다.
+* **mapping파일**  
+SQL 문, SQL parameter, 실행 결과를 어떻게 Java object로 변환하는지가 담겨 있다. 각 SQL은 고유한 id를 갖고 DAO에서는 이 id를 이용해 SQL을 실행한다.
+### SqlMapClient를 위한 SqlMapClientFactoryBean 등록
+JDBC의 Connection처럼 모든 data access 작업에서 필요로 하는 object다. SqlMapClient를 singleton bean으로 등록해서 필요한 DAO에서 DI 받아 사용할 수 있다. SqlMapClient는 multi-thread에서 공유해서 사용해도 안전.  
+SqlMapClient의 구현 class를 직접 bean으로 등록하는 대신 다음과 같이 SqlMapClientFactoryBean을 이용해 factory bean이 생성해줘야 한다.
+```xml
+<bean id="sqlMapClient" class="org.springframework.orm.ibatis.SqlMapClientFactoryBean">
+    <property name="configLocation" value="classpath:/META-INF/sqlmap/sql-map-config.xml"/>
+    <property name="dataSource" ref="dataSource"/>
+</bean>
+```
+## SqlMapClientTemplate
+sqlMapClient를 직접 사용하는 대신 Spring이 제공하는 template object인 SqlMapClientTemplate을 이용하는 것이 좋다.  
+DAO에서는 SqlMapClient object를 DI 받고 이를 이용해 SqlMapClientTemplate object를 instance 변수에 저장해두고 사용하는 방법을 주로 쓴다.
+
+4.JPA, 5.Hibernate 는 현재 공부하는 application에 해당되지 않는 내용 같아서 생략.
+
+# transactions
+EJB(Enterprise JavaBeans)가 제공했던 서비스 중 가장 매력적인 것은 바로 declaritive transaction이다. 경계설정 기능을 이용하면 코드 내에서 직접 transaction을 관리하고 transaction 정보를 parameter로 넘겨서 사용하지 않아도 된다. declarative transaction의 가장 큰 장점은 transaction script 방식의 코드를 탈피할 수 있다는 것.  
+transaction script란 하나의 transaction 안에서 동작해야 하는 코드를 한 군데 모아서 만드는 방식이다. 이 방식은 중복이 자주 발생한다. business logic과 data access logic이 한데 코드에 섞여 있는 문제는 말할 것도 없다.  
+transaction script 코드에 DAO pattern을 적용해서 data access logic을 분리하더라도, transaction을 명시적으로 시작하고 종료하는 경계 설정코드가 등장하는 것과 매번 transaction 정보를 method parameter로 넘기는 불편은 여전히 남아 있다.  
+하지만 declarative transaction 경계설정을 사용하면 이런 문제를 모두 해결할 수 있다.  
+EJB의 이런 기능을 복잡한 환경이나 구현조건 없이 평범한 POJO로 만든 코드에 적용하게 해주는 것이 바로 Spring이다.
+
+## Transaction abstraction & synchronization
+transaction service는 data access 기술보다 더 다양하다.  
+Spring은 data access 기술과 transaction service 사이의 종속성을 제거하고 Spring이 제공하는 transaction abstraction 계층을 이용해 transaction 기능을 활용하도록 만들어준다.
+
+## transaction 경계설정 전략
+transaction의 시작과 종료가 되는 경계는 보통 service 계층 object의 method다.  
+경계 설정 방법은 코드에 의한 programming과 AOP를 이용한 declarative 방법으로 구분할 수 있다.
+
+## transaction attribute
+Spring은 transaction의 경계를 설정할 때 4가지 속성을 지정할 수 있다. 또, declarative transaction에서는 rollback과 commit의 기준을 변경하기 위해 2가지 추가 속성 지정 가능하다.
+
+## data access 기술 transaction의 통합
+여러 개의 DB를 독립적으로 사용하지 않는 한 transaction manager는 한 개만 사용.  
+하지만 DB는 하나이지만 두 가지 이상의 data access 기술을 하나의 transaction 안에서 사용하는 것도 가능하다.
+
+## JTA를 이용한 global/distributed transaction
+한 개 이상의 DB나 JMS의 작업을 하나의 transaction 안에서 동작하게 하려면 server가 제공하는 transaction manager를 JTA(Java Transaction API)를 통해 사용해야 한다. 
