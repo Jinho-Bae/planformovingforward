@@ -57,3 +57,31 @@
 * 한 object에 대해 TCP connection이 닫힘
 ### persistent HTTP
 * 여러 object이 한 TCP connection에 대해 전송될 수 있음
+
+## Socket Programming
+transport layer는 TCP, UDP를 사용. application layer는 transport layer와 연결되어 있다. 따라서 application은 TCP or UDP socket을 사용한다.
+
+### what is a socket?
+* network를 경유하는 process 간 통신의 terminal.
+* 오늘날 컴퓨터 간 통신의 대부분은 internet protocol을 기반으로 하고 있으므로, 대부분의 network socket = internet socket.
+* interface between application and network
+    * The application creates a socket
+
+### 2 types of sockets
+* SOCK_STREAM
+    * TCP
+    * reliable delivery
+    * in-order guaranteed
+    * connection-oriented
+    * bidirectional
+* SOCK_DGRAM
+    * UDP
+    * unreliable delivery
+    * no order guarantees
+    * no notion of "connection" - app indicates dest. for each packet
+    * can send or receive
+
+## Socket Functions
+![](https://i.imgur.com/RYxQjT9.png)
+![](https://i.imgur.com/a4M1xaK.png)
+* bind(): 특정 socket을 특정 port로 bind.
