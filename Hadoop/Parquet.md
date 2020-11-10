@@ -5,7 +5,7 @@ Parquet
 
 [TOC]
 
-## Parguet(파케이)란?
+## Parquet(파케이)란?
 
 * 데이터를 저장하는 방식(파일 포맷) 중 하나
 
@@ -16,7 +16,7 @@ Parquet
 3. 특정 언어에 종속되지 않음
 
 >  Hadoop 에코시스템 내 어떤 프로젝트에서도 이용가능한 **컬럼 기반의 저장 포맷**.
->  특정 데이터처리 프레임워크, 데이터 모델, 프로그래밍 언어에 구애받지 않음
+>  데이터처리 프레임워크, 데이터 모델, 프로그래밍 언어에 구애받지 않음
 
 컬럼 기반의 저장 포맷
 ---
@@ -36,7 +36,94 @@ Parquet
 2. **I/O 사용률이 줄어듦**
 데이터를 읽을 때 일부 컬럼만 스캔하기 때문에
 3. **컬럼 별로 적합한 인코딩 사용 가능**
-각 컬럼의 데이터들은 같은 타입이기 때문에
+각 컬럼의 데이터들은 동일한 유형이기 때문에
+
+## nested structure
+nested data 구조를 컬럼 기반 format에 저장하기 위해서 스키마를 column list에 맵핑  
+(레코드를 flat column에 쓰고, 그렇게 쓴 데이터를 원래 중첩 데이터 구조로 다시 읽을 수있는 방식으로)
+![](https://i.imgur.com/PKyxboy.png)
+파란색의 primitive type 당 1개의 컬럼을 생성
+![](https://i.imgur.com/66oAlgb.png)
+각 레코드는 두 개의 정수의 값을 갖고 있다. definition level, repetition level  
+이 두 값을 사용하여 nested 구조를 완전히 복원할 수 있다.
+* Definition Level  
+root(0)부터 column의 가장 깊은 깊이까지.  
+중첩된 구조를 위해서 null인 필드에 대한 level이 필요  
+현재 depth에서 required가 **아닌** field 중 null이 아닌 것의 개수(?)
+![](https://i.imgur.com/RqD7uK1.png)
+![](https://i.imgur.com/wTJTgKx.png)
+
+    아래와 같이 required field는 definition level이 필요치 않다.
+
+```
+message ExampleDefinitionLevel {
+    optional group a {
+        required group b {
+            optional string c;
+        }
+    }
+}
+```
+![](https://i.imgur.com/xAYlmwe.png)
+* Repetition Level  
+각 level에서 새로운 리스트의 시작 marker.  
+현재 컬럼의 새로운 값을 추가하기 위해 필요
+![](https://i.imgur.com/Y2yIgc6.png)
+![](https://i.imgur.com/hoLhX5h.png)
+    
+    0은 모든 레벨에 대하여 새로운 데이터.  
+    1은 level1에 대한 새로운 데이터.  
+    2는 level2에 대한 새로운 데이터.
+    optional과 required field는 반복하지 않기 때문에 repetition level 불필요
+
+## nested structure 예제
+```
+AddressBook {
+owner: "Julien Le Dem",
+ownerPhoneNumbers: "555 123 4567",
+ownerPhoneNumbers: "555 666 1337",
+contacts: {
+name: "Dmitriy Ryaboy",
+phoneNumber: "555 987 6543",
+},
+contacts: {
+name: "Chris Aniszczyk"
+}
+}
+AddressBook {
+owner: "A. Nonymous"
+}
+```
+위 예제를 contacts.phoneNumber 기준으로 표현하면,
+```
+AddressBook {
+contacts: {
+phoneNumber: "555 987 6543"
+}
+contacts: {
+}
+}
+AddressBook {
+}
+```
+위 컬럼은 아래와 같이 표현
+![](https://i.imgur.com/26UNnLS.png)
+* R=0, D=2, Value = “555 987 6543”
+    * R=0은 root부터 definition level까지의 새로운 record라는 의미
+    * D=2(max)는 값이 정의되었다는 의미
+* R=1, D=1
+    * R=1은 level1의 새로운 entry라는 의미
+    * D=1은 contacts는 정의되었지만, phoneNumber는 그렇지 않음을 의미
+* R=0, D=0
+    * root로부터 새로운 record. contacts가 null
+
+> 각각의 primitive type에 대하여 3개의 sub columns를 만듦으로써 효과적으로 저장
+> 하지만, 3 sub columns를 저장할 때 컬럼 기반 저장 방식에 덕분에 오버헤드가 낮다.
+> 왜냐하면, level이 스키마의 depth에 한정되기 때문
+    > 1bit은 1까지, 2bit은 3까지, 3bit은 7level까지 저장 가능
+    > level은 0부터 column의 depth까지 가능
+    > repeated field가 아니면 repetition level 불필요, required field는 definition level이 필요 없기 때문에 level 상한선이 더 낮아질 여지가 있다.
+> 특별히, flat schema w/ all fields required 인 경우, 2 level은 완전히 무시 가능.
 
 ## Parquet 파일 구조
 ![](https://i.imgur.com/L85naxB.png)
@@ -46,9 +133,17 @@ Parquet
     * 헤더 : Parquet 포맷 파일임을 알려주는 4byte magic number : PAR1
     * 블록 : row group. 행에 대한 column 데이터를 포함한 column chunk. 각 column chunk는 페이지에 기록
     * footer : 포맷 버전, 스키마, 추가 키-값 쌍, 파일의 모든 블록에 대한 메타 데이터
-* 페이지는 데이터의 최소 단위
+* 페이지는 데이터/접근의 최소 단위
     * 동일 컬럼의 데이터만 존재
     * 인코딩/압축 시 페이지 단위로
+    * 효율적인 압축을 위해 충분히 커야 함 (but, < 1MB)
+* Row group
+    * max size buffered in memory while reading
+    * One (or more) per split while reading(?)
+    * roughly 50MB < row group < 1GB
+* Column chunk
+    * 한 row group 내 한 컬럼의 데이터
+    * 효율적인 scan을 위해 독립적으로 읽힐 수 있음
 
 ## Parquet 설정
 속성|타입|기본값|설명
@@ -100,3 +195,4 @@ A처럼 두 개의 Disk block에 걸치는 경우는 적겠지만 columnar stora
 
 [출처] [Apache Spark에서 컬럼 기반 저장 포맷 Parquet(파케이) 제대로 활용하기](http://engineering.vcnc.co.kr/2018/05/parquet-and-spark/) | Sangwoo Kim, MunShik JOUNG
 
+[출처] [Dremel made simple with Parquet](https://blog.twitter.com/engineering/en_us/a/2013/dremel-made-simple-with-parquet.html) | @J_
