@@ -38,6 +38,44 @@ Parquet
 3. **컬럼 별로 적합한 인코딩 사용 가능**
 각 컬럼의 데이터들은 동일한 유형이기 때문에
 
+## model
+컬럼 기반 포맷으로 저장하기 위해서 먼저, 데이터 구조를 schema를 사용해 그려야 한다.  
+Protocol buffers(구조화된 데이터를 직렬화하는 method)와 유사한 모델을 사용.  
+* group을 사용하여 **중첩(nesting)**
+* repeated field를 사용하여 **반복**
+
+Map, List, Set과 같은 복잡한 타입은 필요 없다. 이들은 모두 repeated fields와 group의 조합으로 맵핑될 수 있기 때문에.
+
+* schema의 root는 **message**라 불리우는 1개의 group
+* 이 group의 각 **field**는 3개의 속성을 가진다.
+    * repetition
+        * required: exactly one occurrence
+        * optional: 0 or 1 occurrence
+        * repeated: 0 or more occurrences
+    * type
+        * group
+        * primitive type (e.g., int, float, boolean, string)
+    * name
+
+schema의 예제 (AddressBook)
+```
+message AddressBook {
+    required string owner;
+    repeated string ownerPhoneNumbers;
+    repeated group contacts {
+        required string name;
+        optional string phoneNumber;
+    }
+}
+```
+Lists (or Sets) can be represented by a repeating field.
+![](https://i.imgur.com/vXQdzM7.png)
+
+A Map is equivalent to a repeating field containing groups of key-value pairs where the key is required.
+![](https://i.imgur.com/5QDiFOL.png)
+
+
+
 ## nested structure
 nested data 구조를 컬럼 기반 format에 저장하기 위해서 스키마를 column list에 맵핑  
 (레코드를 flat column에 쓰고, 그렇게 쓴 데이터를 원래 중첩 데이터 구조로 다시 읽을 수있는 방식으로)
